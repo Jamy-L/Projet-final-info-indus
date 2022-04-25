@@ -75,12 +75,12 @@ SDRAM_HandleTypeDef hsdram1;
 osThreadId defaultTaskHandle;
 osThreadId viseurHandle;
 osThreadId tirHandle;
-osThreadId EnnemiHandle;
 osThreadId LedHandle;
 osThreadId AffichageHandle;
 osThreadId shareHandle;
 osMessageQId Queue_TirHandle;
 osMessageQId Queue_hitHandle;
+osMessageQId Queue_RecieveHandle;
 osSemaphoreId Mutex_EcranHandle;
 /* USER CODE BEGIN PV */
 
@@ -110,7 +110,6 @@ static void MX_UART7_Init(void);
 void StartDefaultTask(void const * argument);
 void Task_Viseur(void const * argument);
 void Task_Tir(void const * argument);
-void Task_Ennemi(void const * argument);
 void Task_Affichage(void const * argument);
 void Task_Share(void const * argument);
 
@@ -121,13 +120,23 @@ void Task_Share(void const * argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 SPI_PERIOD = 25;
+
+uint16_t Size = 5;
+uint32_t Timeout = 100;
+
+uint16_t pData_received[5];
+uint16_t pData_transmit[4];
+
+
 uint16_t x_viseur1 = 100 ;
 uint16_t y_viseur1 =100 ;
-uint16_t x_viseur = 100 ;
-uint16_t y_viseur =100 ;
+uint16_t x_viseur2 = 100 ;
+uint16_t y_viseur2 =100 ;
 
 uint16_t x_ennemi =100 ;
 uint16_t y_ennemi =100 ;
+uint8_t score1 = 0;
+uint8_t score2 = 0;
 
 int test_hitbox(int x1, int y1, int x2, int y2){
 	if ((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2)<=400){
@@ -136,6 +145,7 @@ int test_hitbox(int x1, int y1, int x2, int y2){
 	else
 		return 0;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -190,17 +200,13 @@ BSP_LCD_LayerDefaultInit(0, LCD_FB_START_ADDRESS);
 BSP_LCD_LayerDefaultInit(1, LCD_FB_START_ADDRESS+ BSP_LCD_GetXSize()*BSP_LCD_GetYSize()*4);
 BSP_LCD_DisplayOn();
 BSP_LCD_SelectLayer(0);
-//BSP_LCD_Clear(LCD_COLOR_GREEN);
 BSP_LCD_SelectLayer(1);
 BSP_LCD_Clear(00);
 BSP_LCD_SetFont(&Font12);
-BSP_LCD_SetTextColor(LCD_COLOR_RED);
-BSP_LCD_SetBackColor(LCD_COLOR_GREEN);
 
 BSP_TS_Init(BSP_LCD_GetXSize(), BSP_LCD_GetYSize());
 
-
-
+HAL_SPI_TransmitReceive_IT(&hspi2, pData_transmit, pData_received, Size);
 
 
   /* USER CODE END 2 */
@@ -231,6 +237,10 @@ BSP_TS_Init(BSP_LCD_GetXSize(), BSP_LCD_GetYSize());
   osMessageQDef(Queue_hit, 16, uint16_t);
   Queue_hitHandle = osMessageCreate(osMessageQ(Queue_hit), NULL);
 
+  /* definition and creation of Queue_Recieve */
+  osMessageQDef(Queue_Recieve, 16, uint16_t);
+  Queue_RecieveHandle = osMessageCreate(osMessageQ(Queue_Recieve), NULL);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -247,10 +257,6 @@ BSP_TS_Init(BSP_LCD_GetXSize(), BSP_LCD_GetYSize());
   /* definition and creation of tir */
   osThreadDef(tir, Task_Tir, osPriorityNormal, 0, 128);
   tirHandle = osThreadCreate(osThread(tir), NULL);
-
-  /* definition and creation of Ennemi */
-  osThreadDef(Ennemi, Task_Ennemi, osPriorityLow, 0, 128);
-  EnnemiHandle = osThreadCreate(osThread(Ennemi), NULL);
 
   /* definition and creation of Led */
   osThreadDef(Led, Task_Tir, osPriorityAboveNormal, 0, 128);
@@ -779,7 +785,7 @@ static void MX_SPI2_Init(void)
   hspi2.Instance = SPI2;
   hspi2.Init.Mode = SPI_MODE_SLAVE;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.DataSize = SPI_DATASIZE_16BIT;
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
@@ -1481,6 +1487,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	int Message = 1;
 	xQueueSendFromISR(Queue_TirHandle, &Message, 0);
 }
+
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef * hspi){
+	HAL_SPI_TransmitReceive_IT(&hspi2, pData_transmit, pData_received, Size); // rappel de l'interruption
+
+	int Message = 1;
+	xQueueSendFromISR(Queue_RecieveHandle, &Message, 0); // la tache share est notifiée
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -1536,11 +1550,11 @@ void Task_Viseur(void const * argument)
 	int y = (2050-(int)joystick_v)*50/4100;
 
 	xSemaphoreTake( Mutex_EcranHandle, portMAX_DELAY );
-	extern uint16_t x_viseur;
-	if ((x+x_viseur>=1+10) && (x+x_viseur<=480-10)){x_viseur= x_viseur + x;};
+	extern uint16_t x_viseur2;
+	if ((x+x_viseur2>=1+10) && (x+x_viseur2<=480-10)){x_viseur2= x_viseur2 + x;};
 
-	extern uint16_t y_viseur;
-	if ((y+y_viseur>=1+10)&&(y+y_viseur<=272-10)){y_viseur = y_viseur + y;};
+	extern uint16_t y_viseur2;
+	if ((y+y_viseur2>=1+10)&&(y+y_viseur2<=272-10)){y_viseur2 = y_viseur2 + y;};
 
 	xSemaphoreGive( Mutex_EcranHandle );
 
@@ -1562,8 +1576,8 @@ void Task_Tir(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	extern uint16_t x_viseur;
-	extern uint16_t y_viseur;
+	extern uint16_t x_viseur2;
+	extern uint16_t y_viseur2;
 	extern uint16_t x_ennemi;
 	extern uint16_t y_ennemi;
 	int Message = 0;
@@ -1582,7 +1596,7 @@ void Task_Tir(void const * argument)
 		HAL_GPIO_TogglePin(LED14_GPIO_Port,LED14_Pin);
 		HAL_GPIO_TogglePin(LED14_GPIO_Port,LED15_Pin);
 
-		int hit = test_hitbox(x_viseur, y_viseur, x_ennemi, y_ennemi);
+		int hit = test_hitbox(x_viseur2, y_viseur2, x_ennemi, y_ennemi);
 		int Message_hit = 1;
 		if (hit == 1){
 			xQueueSend(Queue_hitHandle, &Message_hit, 0);
@@ -1591,50 +1605,6 @@ void Task_Tir(void const * argument)
     osDelay(100);
   }
   /* USER CODE END Task_Tir */
-}
-
-/* USER CODE BEGIN Header_Task_Ennemi */
-/**
-* @brief Function implementing the Ennemi thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Task_Ennemi */
-void Task_Ennemi(void const * argument)
-{
-  /* USER CODE BEGIN Task_Ennemi */
-	extern uint16_t x_ennemi;
-	extern uint16_t y_ennemi;
-
-	x_ennemi=100;
-	y_ennemi=100;
-
-  /* Infinite loop */
-  for(;;)
-  {
-	int Message_hit = 0;
-	xQueueReceive(Queue_hitHandle, &Message_hit, 0);
-
-	if (Message_hit == 1){
-		osThreadDef(Ennemi, Task_Ennemi, osPriorityLow, 0, 128);
-		EnnemiHandle = osThreadCreate(osThread(Ennemi), NULL);
-		vTaskDelete(NULL);
-
-	}
-	if ((x_ennemi+1>=1+20)&&(x_ennemi+1<=480-20)&&(y_ennemi+1>1+20)&&(y_ennemi+1<=272-20)){
-		xSemaphoreTake( Mutex_EcranHandle, portMAX_DELAY );
-		x_ennemi++;
-		//y_ennemi++;
-	}
-	else{
-		osThreadDef(Ennemi, Task_Ennemi, osPriorityLow, 0, 128);
-		EnnemiHandle = osThreadCreate(osThread(Ennemi), NULL);
-		vTaskDelete(NULL);
-	}
-	xSemaphoreGive( Mutex_EcranHandle );
-    osDelay(10);
-  }
-  /* USER CODE END Task_Ennemi */
 }
 
 /* USER CODE BEGIN Header_Task_Affichage */
@@ -1647,39 +1617,49 @@ void Task_Ennemi(void const * argument)
 void Task_Affichage(void const * argument)
 {
   /* USER CODE BEGIN Task_Affichage */
+	char text[50]={};
   /* Infinite loop */
   for(;;)
   {
 	extern uint16_t x_viseur1, y_viseur1;
-	extern uint16_t x_viseur, y_viseur;
+	extern uint16_t x_viseur2, y_viseur2;
 
 	extern uint16_t x_ennemi;
 	extern uint16_t y_ennemi;
 
 	xSemaphoreTake( Mutex_EcranHandle, portMAX_DELAY );
-	BSP_LCD_Clear(LCD_COLOR_GREEN);
+	BSP_LCD_Clear(LCD_COLOR_GRAY);
 
 	//ennemi
-	BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+	BSP_LCD_SetTextColor(LCD_COLOR_ORANGE);
 	BSP_LCD_FillCircle(x_ennemi,y_ennemi, 20);
 
 	//viseur1
-	BSP_LCD_SetTextColor(LCD_COLOR_ORANGE);
+	BSP_LCD_SetTextColor(LCD_COLOR_CYAN);
 	BSP_LCD_DrawLine(x_viseur1, y_viseur1+10, x_viseur1, y_viseur1-10);
 	BSP_LCD_DrawLine(x_viseur1+10, y_viseur1, x_viseur1-10, y_viseur1);
 	BSP_LCD_DrawCircle(x_viseur1, y_viseur1, 10);
 
 	//viseur2
-	BSP_LCD_SetTextColor(LCD_COLOR_RED);
-	BSP_LCD_DrawLine(x_viseur, y_viseur+10, x_viseur, y_viseur-10);
-	BSP_LCD_DrawLine(x_viseur+10, y_viseur, x_viseur-10, y_viseur);
-	BSP_LCD_DrawCircle(x_viseur, y_viseur, 10);
+	BSP_LCD_SetTextColor(LCD_COLOR_LIGHTMAGENTA);
+	BSP_LCD_DrawLine(x_viseur2, y_viseur2+10, x_viseur2, y_viseur2-10);
+	BSP_LCD_DrawLine(x_viseur2+10, y_viseur2, x_viseur2-10, y_viseur2);
+	BSP_LCD_DrawCircle(x_viseur2, y_viseur2, 10);
+
+	//score
+	sprintf(text,"Score joueur 1 : %02u", score1);
+	BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+	BSP_LCD_DisplayStringAt(60,12,(uint8_t*) text,LEFT_MODE);
+
+	sprintf(text,"Score joueur 2 : %02u", score2);
+	BSP_LCD_SetTextColor(LCD_COLOR_LIGHTMAGENTA);
+	BSP_LCD_DisplayStringAt(260,12,(uint8_t*) text,LEFT_MODE);
 
 
 
 	xSemaphoreGive( Mutex_EcranHandle );
 
-    osDelay(50);
+    osDelay(40);
   }
   /* USER CODE END Task_Affichage */
 }
@@ -1694,24 +1674,54 @@ void Task_Affichage(void const * argument)
 void Task_Share(void const * argument)
 {
   /* USER CODE BEGIN Task_Share */
-	uint32_t pData;
   /* Infinite loop */
   for(;;)
   {
-	uint16_t Size = 32;
-	uint32_t Timeout = 10;
+	 uint16_t hit = 0;
+	 xQueueReceive(Queue_hitHandle, &hit, 0);
 
-	extern uint16_t x_viseur1, y_viseur1;
-	HAL_SPI_Receive(&hspi2, &pData, Size, Timeout);
-
-	uint16_t y = (uint16_t)( pData);
-	uint16_t x = (uint16_t) (pData>>16);
-
-	if ((x>=1+10) && (x<=480-10)){x_viseur1= x;};
-	if ((y>=1+10)&&(y<=272-10)){y_viseur1 = y;};
+	 pData_transmit[0] = x_viseur2;
+	 pData_transmit[1] = y_viseur2;
+	 pData_transmit[2] = hit;
+	 pData_transmit[3] = 0;
 
 
-    osDelay(SPI_PERIOD);
+
+
+	int received_condition = 0;
+	xQueueReceive(Queue_RecieveHandle, &received_condition, 0);
+
+	if (received_condition == 1){
+
+		extern uint16_t x_viseur1, y_viseur1;
+		extern uint16_t x_viseur2, y_viseur2;
+		extern uint16_t x_ennemi, y_ennemi;
+
+		uint16_t x_v = pData_received[0];
+		uint16_t y_v = pData_received[1];
+		uint16_t x_e = pData_received[2];
+		uint16_t y_e = pData_received[3];
+		uint16_t scores = pData_received[4];
+		uint8_t s1 = (uint8_t) (scores>>8);
+		uint8_t s2 = (uint8_t) scores;
+		extern uint8_t score1, score2;
+		score1 = s1;
+		score2 = s2;
+
+
+
+		xSemaphoreTake( Mutex_EcranHandle, portMAX_DELAY );
+		if ((x_v>=1+10) && (x_v<=480-10)){x_viseur1= x_v;};
+		if ((y_v>=1+10)&&(y_v<=272-10)){y_viseur1 = y_v;};
+
+		if ((x_e>=1+20)&&(x_e<=480-20)&&(y_e>1+20)&&(y_e<=272-20)){
+			x_ennemi = x_e;
+			y_ennemi = y_e;
+		}
+		xSemaphoreGive( Mutex_EcranHandle );
+
+	}
+	osDelay(SPI_PERIOD);
   }
   /* USER CODE END Task_Share */
 }
