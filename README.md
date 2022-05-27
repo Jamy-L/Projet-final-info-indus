@@ -6,7 +6,7 @@ Le programme Slave récupère les inputs du joueur 2 et les envoie au joueur 1, 
 ### Les blackboards
 Les programmes "Master" et "Slave" comportent chacun un blackboard soumis à un mutex. Ces derniers contiennent les données du jeu: position de l'ennemi, position du viseur du joueur 1 et du joueur 2, score des deux joueurs.
 ### Les interruptions
-Une interruption matérielle est déclenchée par pression du bouton "BP1", dans le programme "Master" et dans le programme "Slave". Cette dernier envoie un message à la tâche "Tir" par une messagerie, afin de notifier de l'appui.
+Une interruption matérielle est déclenchée par pression du bouton "BP1", dans le programme "Master" et dans le programme "Slave". Cette derniere envoie un message à la tâche "Tir" par une messagerie, afin de notifier de l'appui.
 
 Une interruption est aussi déclenchée lorsqu'une transission SPI est terminée. Au niveau du Slave, cette interruption rappelle directement une transmissions. Au niveau du Master, elle notifie la tâche "Share" via une messagerie.
 ### Les tâches
@@ -16,5 +16,9 @@ Le programme "Master" comporte plusieurs tâches:
   <li> "Affichage" se déclenche périodiquement, et affiche l'ennemi (un disque bleu), ainsi que les viseurs des joueurs 1 et 2. Elle d'accapre le mutex du blackboard Master</li>
   <li> "Tir" est executée périodiquement mais ne se lance réellement que lorsque l'appui sur le bouton BP1 a été notifié par interruption via une messagerie. Cette tâche vérifie alors si le joueur 1 a bien touché l'énnemi. Si c'est le cas, l'ennemi est notifié via une file d'attente.</li>
   <li> "Ennemi" est executée périodiquement et gère la position de l'ennemi. S'il n'est pas touché par les joueurs, il se déplace selon sa direction de mouvement. La direction est mise à jour lorsqu'il rebondit sur les bords de l'écran. La tâche "Ennemi" est notifiée via une file d'attente si l'ennemi est touché ou non, et par quel joueur. Si il est touché, le score du joueur est augmenté, et la tâche "Ennemi" est supprimée puis une nouvelle est crée. Lors de l'initialisation d'un ennemi, les coordonnées sont tirées aléatoirement à l'aide du RNG.</li>
-  <li> "Share" est appelée périodiquement et gère la communication avec le Slave. </li>
+  <li> "Share" est appelée périodiquement et gère la communication avec le Slave. La fonction <code>HAL_SPI_TransmitReceive_IT</code> est appelée, et la tâche sera notifiée par une messagerie lorsque la réception est terminée. Après réception, les donées reçues sont stockées sur le blackboard.</li>
 </ul>
+Le programme "Slave" fonctionne de presque de la même manière, néanmoins:
+<ul>
+  <li>La tâche "Ennemi" n'existe pas puisque l'ennemi est géré par le programme Master et est envoyé par SPI au programme Master.</li>
+  <li>Lorsque le joueur 2 touche l'ennemie, la tâche "Tir" envoie ainsi directement l'information à la tâche "Share" via une file d'attente, afin d'envoyer l'information par SPI.  C'est la tâche "Ennemi" du programme Master qui gérera la suite.</li>
